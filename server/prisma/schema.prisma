@@ -1,0 +1,107 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  // Neon pooled connection (PgBouncer) — used by the serverless runtime.
+  url       = env("DATABASE_URL")
+  // Neon direct connection — used by `prisma migrate`, which needs a session
+  // it can hold open. Pooled URLs fail advisory-lock acquisition on migrate.
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  admin
+  agent
+}
+
+enum ReleaseType {
+  new_field
+  new_component
+  update
+  bug_fix
+}
+
+enum ReleaseStatus {
+  pending_review
+  approved
+  sent
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         Role     @default(agent)
+
+  /// Nav-path prefixes this user may access, e.g. ["Settings", "Reports > Payouts"].
+  /// A single "*" entry grants every path. Matching is segment-wise prefix
+  /// matching — see server/src/lib/permissions.js.
+  permissions  String[] @default([])
+
+  notifications Notification[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([role])
+}
+
+model ReleaseNote {
+  id      String @id @default(cuid())
+  prNumber Int   @unique
+  prTitle String
+  prUrl   String?
+
+  type    ReleaseType
+  /// Editorial title shown in the email and the dashboard.
+  title   String
+  /// 1–2 sentence editorial summary.
+  summary String
+
+  /// Verbatim "What changed" text from the PR body, kept so an admin can
+  /// always diff the polished copy against what the PR actually said.
+  rawWhatChanged String?
+  /// True once the LLM polish step has rewritten title/summary.
+  polished       Boolean @default(false)
+
+  status  ReleaseStatus @default(pending_review)
+
+  paths         ReleaseNotePath[]
+  notifications Notification[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  sentAt    DateTime?
+
+  @@index([status, createdAt])
+}
+
+model ReleaseNotePath {
+  id            String @id @default(cuid())
+  releaseNoteId String
+  pathLabel     String
+
+  releaseNote ReleaseNote @relation(fields: [releaseNoteId], references: [id], onDelete: Cascade)
+
+  @@unique([releaseNoteId, pathLabel])
+  @@index([releaseNoteId])
+}
+
+model Notification {
+  id            String   @id @default(cuid())
+  userId        String
+  releaseNoteId String
+  read          Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  readAt        DateTime?
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  releaseNote ReleaseNote @relation(fields: [releaseNoteId], references: [id], onDelete: Cascade)
+
+  // One notification per user per release note — makes re-sends idempotent.
+  @@unique([userId, releaseNoteId])
+  @@index([userId, read])
+}
