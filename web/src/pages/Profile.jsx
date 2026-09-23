@@ -118,6 +118,13 @@ function ProfilePreview({ profile, newCount, onEdit }) {
                 {profile.category} · Ontario, CA
               </p>
               {profile.tagline && <p className="pv__tagline">{profile.tagline}</p>}
+              {profile.personalWebsite && (
+                <p className="pv__site">
+                  <a href={profile.personalWebsite} target="_blank" rel="noreferrer noopener">
+                    {profile.personalWebsite.replace(/^https?:\/\//i, "")}
+                  </a>
+                </p>
+              )}
               <div className="pv__rating">
                 <span className="pv__score">0</span>
                 <span className="pv__stars" aria-label="0 out of 5 stars">
@@ -289,6 +296,24 @@ function ProfileEditor({ form, setForm, highlights, dirty, status, onCancel, onS
               <p className="upload__rule">Size should be within 10 KB to 10 MB</p>
             </div>
           </div>
+        </section>
+
+        <section className="profile__section">
+          <label className="field__label" htmlFor="profile-personal-website">
+            Personal Website
+            <NewBadge highlight={highlights["profile.personalWebsite"]} />
+          </label>
+          <input
+            id="profile-personal-website"
+            name="personalWebsite"
+            type="url"
+            inputMode="url"
+            autoComplete="url"
+            placeholder="https://your-site.com"
+            value={form.personalWebsite}
+            onChange={(e) => set({ personalWebsite: e.target.value })}
+          />
+          <p className="hint">Shown on your public profile, under your business name.</p>
         </section>
 
         <section className="profile__section">
