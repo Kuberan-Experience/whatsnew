@@ -1,8 +1,6 @@
-import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../lib/auth.jsx";
-import { api } from "../lib/store.js";
-import { NAV_TREE } from "../mock/data.js";
+import { NAV_TREE } from "../lib/appData.js";
 import NotificationBell from "./NotificationBell.jsx";
 
 /**
@@ -47,16 +45,8 @@ function AdminShell({ user, logout, children }) {
 }
 
 function AgentShell({ user, logout, pathname, children }) {
-  const onProfile = pathname.startsWith("/profile") || pathname === "/";
-
-  // Nav items whose controls carry a "New" badge get a dot, so an agent can
-  // find what the release note was talking about without hunting for it.
-  const [highlights, setHighlights] = useState({});
-  useEffect(() => {
-    api.listHighlights(user.id).then(setHighlights).catch(() => setHighlights({}));
-  }, [user.id, pathname]);
-
-  const profileNew = Object.keys(highlights).filter((k) => k.startsWith("profile.")).length;
+  const onProfile = pathname.startsWith("/profile");
+  const onDashboard = pathname.startsWith("/dashboard") || pathname === "/";
 
   return (
     <div className="shell">
@@ -70,7 +60,12 @@ function AgentShell({ user, logout, pathname, children }) {
           <span className="sidebar__pill">5/12</span>
         </div>
 
-        <span className="sidebar__link sidebar__link--static">Home</span>
+        <Link
+          to="/dashboard"
+          className={`sidebar__link ${onDashboard ? "is-active" : ""}`}
+        >
+          Dashboard
+        </Link>
 
         {NAV_TREE.map((group) => (
           <div key={group.group} className="sidebar__group">
@@ -83,7 +78,6 @@ function AgentShell({ user, logout, pathname, children }) {
                   className={`sidebar__link ${onProfile ? "is-active" : ""}`}
                 >
                   {item.label}
-                  {profileNew > 0 && <span className="sidebar__new">{profileNew}</span>}
                 </Link>
               ) : (
                 <span key={item.label} className="sidebar__link sidebar__link--static">
@@ -98,9 +92,9 @@ function AgentShell({ user, logout, pathname, children }) {
       <div className="main">
         <header className="topbar">
           <nav className="crumbs">
-            <span>Hierarchy</span>
+            <span>{onProfile ? "Account Center" : "Home"}</span>
             <span className="crumbs__sep">›</span>
-            <strong>Preview Profile</strong>
+            <strong>{onProfile ? "Preview Profile" : "Dashboard"}</strong>
           </nav>
 
           <div className="topbar__right">

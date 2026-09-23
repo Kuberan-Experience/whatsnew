@@ -14,12 +14,13 @@ cp .env.example .env.local     # then fill in ANTHROPIC_API_KEY
 npm run dev                    # http://localhost:5173
 ```
 
-`.env.local` (gitignored, server-side only — never bundled into client JS):
+`.env.local` (gitignored, server-side only — never bundled into client JS). It is
+re-read on every import, so replacing a key takes effect without a restart:
 
 | Var | Needed for |
 |---|---|
 | `ANTHROPIC_API_KEY` | writing the release note. Without it, importing a PR fails with a clear message. |
-| `GITHUB_TOKEN` | optional — private repos, or lifting GitHub's 60 req/hr anonymous limit. |
+| `GITHUB_TOKEN` | optional — only for **private** repos, or to lift GitHub's 60 req/hr anonymous limit. A fine-grained token with **Pull requests: Read-only** on the repos you import from is enough; nothing else is needed. |
 
 Accounts (password `whatsnew123`):
 
@@ -27,7 +28,7 @@ Accounts (password `whatsnew123`):
 |---|---|---|
 | `kuberan@experience.com` | admin | `*` |
 | `kuberanvenkatesh3@gmail.com` | agent | `*` |
-| `nivedth@experience.com` | agent | `Account Center > Profile`, `Account Center > Billing` |
+| `kuberan@experience.com` | agent | `Account Center > Profile`, `Account Center > Billing` |
 
 > **No real email is sent.** There is no SendGrid key in this build — the
 > addresses decide who appears in the audience panel, the personalizations and
@@ -40,8 +41,7 @@ Paste a PR URL (`https://github.com/owner/repo/pull/123`, or `owner/repo#123`),
 review what comes back, then **Approve & Send**.
 
 **Agent** lands on their profile **preview**, as in the product. **Edit** opens
-the editor; **Cancel** returns. Release notes reach them through the bell, and
-any control a note introduced wears a **New** badge.
+the editor; **Cancel** returns. Release notes reach them through the bell.
 
 ## The loop
 
@@ -51,8 +51,8 @@ any control a note introduced wears a **New** badge.
    who is skipped, and why.
 3. **Email preview** → the newsletter. **Approve & Send** → the **Delivered**
    tab shows the per-agent personalizations and the exact HTML.
-4. As an agent: bell badge, a dot on *Profile*, and a **New** badge on the field
-   the PR added.
+4. As an agent: the bell carries the note — what changed, and the nav path to
+   go to.
 
 ## Where the content comes from
 
@@ -62,10 +62,17 @@ Nothing is seeded. Every release note is a real PR.
   `.github/PULL_REQUEST_TEMPLATE.md`, the *Type* and *Path(s) in app* sections
   are parsed literally. The author's paths **override** the model's — they decide
   who gets notified, and a model should not be free to reword that.
-- **Claude second**, for the editorial copy and for whatever the template left
-  blank. It is told, and constrained by schema, to use only what the PR says; a
-  thin PR yields a thin note rather than an invented one. It returns a
-  `confidence` flag, surfaced on import when the PR body was thin.
+- **Claude second**: it works out from the PR what is actually new for the user,
+  writes the copy, and names the nav path to send them to. It is told — and
+  constrained by schema — to use only what the PR says, so a thin PR yields a
+  thin note rather than an invented one, and to call out changes that are
+  invisible to users instead of dressing them up. It returns a `confidence`
+  flag, surfaced on import when the PR body was thin.
+
+There is no local catalog of the app's fields or components. The PR is the only
+source of what shipped; the nav list exists because the sidebar renders from it
+and permissions are written in its terms, and it is passed to Claude so the path
+it returns is one the permission matcher can actually match.
 - Paths the PR didn't state are labelled as inferred in the editor, so they get
   a second look before they decide an audience.
 
@@ -85,6 +92,7 @@ web/
   vite.config.js                  mounts /api/pr-import in dev
   src/email/releaseNoteEmail.js   the newsletter — all styling lives here
   src/lib/permissions.js          segment-prefix path matching
+  src/lib/appData.js              nav tree, profile content, accounts
   src/lib/store.js                app state; one function per future endpoint
   src/pages/AdminReleaseNotes.jsx
   src/pages/Profile.jsx           preview + editor
@@ -102,11 +110,3 @@ An agent's permissions are nav-path prefixes:
 
 The same matcher decides who is emailed, who gets the bell entry, and who sees
 the "New" badge — so the three can't drift apart.
-
-### Tying a note to the control it describes
-
-A note can name a `componentKey` (`profile.tagline`, …) from
-`PROFILE_COMPONENTS` in `src/mock/data.js`; Claude picks one when the PR clearly
-introduces it, and the admin can override. Once sent, that control renders a
-"New" badge for the agents who were in the audience. Add a component to that
-list and it becomes available to both.

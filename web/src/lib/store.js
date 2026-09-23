@@ -21,8 +21,13 @@ import {
   DEMO_PASSWORD,
   flattenNavPaths,
   PROFILE_SEED,
-} from "../mock/data.js";
-import { selectRecipients, visiblePathsFor, normalizePathLabel } from "./permissions.js";
+} from "./appData.js";
+import {
+  selectRecipients,
+  visiblePathsFor,
+  normalizePathLabel,
+} from "./permissions.js";
+import { destinationFor } from "./deepLink.js";
 import { renderReleaseNoteEmail } from "../email/releaseNoteEmail.js";
 
 // Bump on any seed change: persisted state from an older seed would otherwise
@@ -56,6 +61,21 @@ function load() {
 
 let state = load();
 
+// Two accounts sharing an email means login always resolves to the first one
+// and the other becomes unreachable. Cheap to detect, confusing to debug.
+if (import.meta.env?.DEV) {
+  const seen = new Set();
+  for (const u of state.users ?? []) {
+    const email = u.email?.toLowerCase();
+    if (seen.has(email)) {
+      console.warn(
+        `[whatsnew] Duplicate account email "${u.email}" — only the first can sign in.`,
+      );
+    }
+    seen.add(email);
+  }
+}
+
 function persist() {
   try {
     localStorage.setItem(KEY, JSON.stringify(state));
@@ -65,7 +85,9 @@ function persist() {
 }
 
 function delay(value) {
-  return new Promise((resolve) => setTimeout(() => resolve(structuredClone(value)), LATENCY));
+  return new Promise((resolve) =>
+    setTimeout(() => resolve(structuredClone(value)), LATENCY),
+  );
 }
 
 function fail(status, message) {
@@ -87,7 +109,7 @@ export const api = {
   /** POST /api/auth/login */
   login(email, password) {
     const user = state.users.find(
-      (u) => u.email.toLowerCase() === String(email).trim().toLowerCase()
+      (u) => u.email.toLowerCase() === String(email).trim().toLowerCase(),
     );
     if (!user || password !== DEMO_PASSWORD) {
       return fail(401, "Invalid email or password");
@@ -127,21 +149,26 @@ export const api = {
     try {
       payload = await res.json();
     } catch {
-      throw Object.assign(new Error("The import endpoint returned nothing usable."), {
+      throw Object.assign(
+        new Error("The import endpoint returned nothing usable."),
+        {
+          status: res.status,
+        },
+      );
+    }
+    if (!res.ok) {
+      throw Object.assign(new Error(payload.error ?? "Import failed"), {
         status: res.status,
       });
     }
-    if (!res.ok) {
-      throw Object.assign(new Error(payload.error ?? "Import failed"), { status: res.status });
-    }
 
     const duplicate = state.releaseNotes.find(
-      (n) => n.prNumber === payload.prNumber && n.prRepo === payload.prRepo
+      (n) => n.prNumber === payload.prNumber && n.prRepo === payload.prRepo,
     );
     if (duplicate) {
       throw Object.assign(
         new Error(`PR #${payload.prNumber} has already been imported.`),
-        { status: 409 }
+        { status: 409 },
       );
     }
 
@@ -164,7 +191,7 @@ export const api = {
     const sorted = [...state.releaseNotes].sort(
       (a, b) =>
         order[a.status] - order[b.status] ||
-        new Date(b.createdAt) - new Date(a.createdAt)
+        new Date(b.createdAt) - new Date(a.createdAt),
     );
     return delay(sorted);
   },
@@ -174,19 +201,23 @@ export const api = {
     const note = noteById(id);
     if (!note) return fail(404, "Release note not found");
     if (note.status === "sent") {
-      return fail(409, "This release note has been sent and can no longer be edited");
+      return fail(
+        409,
+        "This release note has been sent and can no longer be edited",
+      );
     }
 
     if (patch.title !== undefined) {
-      if (!String(patch.title).trim()) return fail(400, "Title cannot be empty");
+      if (!String(patch.title).trim())
+        return fail(400, "Title cannot be empty");
       note.title = String(patch.title).trim();
     }
     if (patch.summary !== undefined) {
-      if (!String(patch.summary).trim()) return fail(400, "Summary cannot be empty");
+      if (!String(patch.summary).trim())
+        return fail(400, "Summary cannot be empty");
       note.summary = String(patch.summary).trim();
     }
     if (patch.type !== undefined) note.type = patch.type;
-    if (patch.componentKey !== undefined) note.componentKey = patch.componentKey || null;
     if (patch.status !== undefined) note.status = patch.status;
 
     if (patch.paths !== undefined) {
@@ -223,35 +254,70 @@ export const api = {
     }));
 
     const excluded = state.users
-      .filter((u) => u.role === "agent" && !recipients.some((r) => r.id === u.id))
+      .filter(
+        (u) => u.role === "agent" && !recipients.some((r) => r.id === u.id),
+      )
       .map((u) => ({ id: u.id, name: u.name, email: u.email }));
 
     return delay({ recipients, excluded });
   },
 
   /** POST /api/release-notes/:id/send */
-  sendReleaseNote(id) {
+  async sendReleaseNote(id) {
     const note = noteById(id);
     if (!note) return fail(404, "Release note not found");
-    if (note.status === "sent") return fail(409, "Release note has already been sent");
+    if (note.status === "sent")
+      return fail(409, "Release note has already been sent");
+    if (!String(note.summary ?? "").trim()) {
+      return fail(
+        422,
+        "This note has no summary — the pull request didn't describe the change. Write one before sending.",
+      );
+    }
 
     const recipients = selectRecipients(state.users, note.paths);
     if (!recipients.length) {
       return fail(
         422,
-        "No agents have permission for any of this note's paths. Adjust the paths or the agents' permissions, then send."
+        "No agents have permission for any of this note's paths. Adjust the paths or the agents' permissions, then send.",
       );
     }
 
     const sentAt = new Date().toISOString();
 
-    // One send, one personalizations array — the batch shape the real SendGrid
-    // call uses, so the outbox shows exactly how many API calls it would cost.
     const personalizations = recipients.map((u) => ({
       to: u.email,
       name: u.name,
       visiblePaths: note.paths.length ? visiblePathsFor(u, note.paths) : [],
     }));
+
+    // Hand it to the server to send for real. If SendGrid isn't configured the
+    // server says so, and we record the send as simulated rather than pretending
+    // an email went out.
+    let delivery;
+    try {
+      const res = await fetch("/api/send-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          note: { title: note.title, summary: note.summary, type: note.type },
+          recipients: personalizations.map((p) => ({
+            email: p.to,
+            name: p.name,
+            visiblePaths: p.visiblePaths,
+          })),
+        }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      delivery = res.ok
+        ? { delivered: true, calls: payload.calls, sent: payload.sent }
+        : {
+            delivered: false,
+            reason: payload.error ?? `Send failed (${res.status})`,
+          };
+    } catch (err) {
+      delivery = { delivered: false, reason: err.message };
+    }
 
     const { subject, html } = renderReleaseNoteEmail({
       notes: [note],
@@ -266,22 +332,35 @@ export const api = {
       html,
       sentAt,
       personalizations,
-      sendGridCalls: Math.ceil(personalizations.length / 1000),
+      sendGridCalls:
+        delivery.calls ?? Math.ceil(personalizations.length / 1000),
+      delivered: delivery.delivered,
+      deliveryError: delivery.reason ?? null,
     });
 
-    // One notification row per recipient, deduped on (user, note).
-    for (const u of recipients) {
-      const exists = state.notifications.some(
-        (n) => n.userId === u.id && n.releaseNoteId === note.id
-      );
-      if (exists) continue;
-      state.notifications.unshift({
-        id: `n_${u.id}_${note.id}`,
-        userId: u.id,
-        releaseNoteId: note.id,
-        read: false,
-        createdAt: sentAt,
-      });
+    // A notification is only worth posting if it can take the agent somewhere.
+    // When none of the note's paths map to a screen that exists, the bell entry
+    // would be a dead end — so it isn't created, and every notification that
+    // does exist carries a working "Check it out".
+    const destination = destinationFor(note);
+    let notified = 0;
+
+    if (destination) {
+      // One row per recipient, deduped on (user, note).
+      for (const u of recipients) {
+        const exists = state.notifications.some(
+          (n) => n.userId === u.id && n.releaseNoteId === note.id,
+        );
+        if (exists) continue;
+        state.notifications.unshift({
+          id: `n_${u.id}_${note.id}`,
+          userId: u.id,
+          releaseNoteId: note.id,
+          read: false,
+          createdAt: sentAt,
+        });
+        notified += 1;
+      }
     }
 
     note.status = "sent";
@@ -291,7 +370,11 @@ export const api = {
     return delay({
       ok: true,
       recipients: recipients.length,
-      sendGridCalls: Math.ceil(recipients.length / 1000),
+      sendGridCalls: delivery.calls ?? 0,
+      delivered: delivery.delivered,
+      deliveryError: delivery.reason ?? null,
+      notified,
+      destination: destination?.path ?? null,
       sentAt,
     });
   },
@@ -311,7 +394,10 @@ export const api = {
     // Merge over the seed rather than replacing it: persisted state written
     // before a field existed would otherwise hand React an undefined value and
     // flip that input to uncontrolled.
-    state.profile = { ...structuredClone(PROFILE_SEED), ...(state.profile ?? {}) };
+    state.profile = {
+      ...structuredClone(PROFILE_SEED),
+      ...(state.profile ?? {}),
+    };
     return delay(state.profile);
   },
 
@@ -324,44 +410,12 @@ export const api = {
 
     // People type "acme.com"; store something a browser can actually open.
     const site = String(next.personalWebsite ?? "").trim();
-    next.personalWebsite = site && !/^https?:\/\//i.test(site) ? `https://${site}` : site;
+    next.personalWebsite =
+      site && !/^https?:\/\//i.test(site) ? `https://${site}` : site;
 
     state.profile = next;
     persist();
     return delay(state.profile);
-  },
-
-  /**
-   * GET /api/highlights
-   *
-   * Which controls on screen should wear a "New" badge for this user: every
-   * sent release note that names a componentKey and that this user was allowed
-   * to receive. Same permission filter as the email and the bell, so the three
-   * can never disagree about what an agent has been told.
-   */
-  listHighlights(userId) {
-    const user = state.users.find((u) => u.id === userId);
-    if (!user) return fail(401, "Session expired");
-
-    const highlights = {};
-    for (const note of state.releaseNotes) {
-      if (note.status !== "sent" || !note.componentKey) continue;
-
-      const allowed =
-        user.role === "admin" ||
-        !note.paths.length ||
-        visiblePathsFor(user, note.paths).length > 0;
-      if (!allowed) continue;
-
-      highlights[note.componentKey] = {
-        id: note.id,
-        title: note.title,
-        summary: note.summary,
-        type: note.type,
-        sentAt: note.sentAt,
-      };
-    }
-    return delay(highlights);
   },
 
   /** GET /api/notifications */
@@ -371,6 +425,13 @@ export const api = {
 
     const rows = state.notifications
       .filter((n) => n.userId === userId)
+      // Only surface what we can actually take the agent to. This also hides
+      // rows written before that rule existed, so the bell is self-healing
+      // rather than showing a dead entry until someone clears storage.
+      .filter((n) => {
+        const note = noteById(n.releaseNoteId);
+        return note && destinationFor(note);
+      })
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
       .map((n) => {
         const note = noteById(n.releaseNoteId);
@@ -384,6 +445,8 @@ export const api = {
             title: note.title,
             summary: note.summary,
             sentAt: note.sentAt,
+            // Labels the PR's diff introduced — what "Check it out" aims at.
+            uiLabels: note.uiLabels ?? [],
             // Filtered again on read: permissions can be narrowed after the
             // notification was written.
             paths: note.paths.length ? visiblePathsFor(user, note.paths) : [],
@@ -397,9 +460,18 @@ export const api = {
     });
   },
 
+  /** Does this note point at a screen the app actually has? */
+  destinationForNote(id) {
+    const note = noteById(id);
+    if (!note) return fail(404, "Release note not found");
+    return delay(destinationFor(note));
+  },
+
   /** PATCH /api/notifications/:id/read */
   markNotificationRead(userId, id) {
-    const row = state.notifications.find((n) => n.id === id && n.userId === userId);
+    const row = state.notifications.find(
+      (n) => n.id === id && n.userId === userId,
+    );
     if (!row) return fail(404, "Notification not found");
     row.read = true;
     persist();

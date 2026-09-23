@@ -4,6 +4,7 @@ import AppShell from "./components/AppShell.jsx";
 import Login from "./pages/Login.jsx";
 import AdminReleaseNotes from "./pages/AdminReleaseNotes.jsx";
 import Profile from "./pages/Profile.jsx";
+import Dashboard from "./pages/Dashboard.jsx";
 
 function Protected({ adminOnly = false, children }) {
   const { user, loading } = useAuth();
@@ -19,11 +20,19 @@ function Protected({ adminOnly = false, children }) {
 
 export default function App() {
   const { user } = useAuth();
-  const home = user?.role === "admin" ? "/admin/release-notes" : "/profile";
+  const home = user?.role === "admin" ? "/admin/release-notes" : "/dashboard";
 
   return (
     <Routes>
       <Route path="/login" element={user ? <Navigate to={home} replace /> : <Login />} />
+      <Route
+        path="/dashboard"
+        element={
+          <Protected>
+            <Dashboard />
+          </Protected>
+        }
+      />
       <Route
         path="/profile"
         element={
