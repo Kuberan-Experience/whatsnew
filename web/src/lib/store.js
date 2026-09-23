@@ -308,8 +308,10 @@ export const api = {
 
   /** GET /api/profile */
   getProfile() {
-    // Older persisted state predates the profile; fall back to the seed.
-    state.profile ??= structuredClone(PROFILE_SEED);
+    // Merge over the seed rather than replacing it: persisted state written
+    // before a field existed would otherwise hand React an undefined value and
+    // flip that input to uncontrolled.
+    state.profile = { ...structuredClone(PROFILE_SEED), ...(state.profile ?? {}) };
     return delay(state.profile);
   },
 
@@ -318,7 +320,13 @@ export const api = {
     if (!String(patch?.publishName ?? "").trim()) {
       return fail(400, "Publish Name is required");
     }
-    state.profile = { ...state.profile, ...patch };
+    const next = { ...state.profile, ...patch };
+
+    // People type "acme.com"; store something a browser can actually open.
+    const site = String(next.personalWebsite ?? "").trim();
+    next.personalWebsite = site && !/^https?:\/\//i.test(site) ? `https://${site}` : site;
+
+    state.profile = next;
     persist();
     return delay(state.profile);
   },

@@ -496,3 +496,7 @@ textarea { resize: vertical; }
 @media (max-width: 1000px) {
   .pv { grid-template-columns: 1fr; }
 }
+
+.pv__site { margin: 6px 0 0; font-size: 13.5px; }
+.pv__site a { color: var(--brand); text-decoration: none; }
+.pv__site a:hover { text-decoration: underline; }
