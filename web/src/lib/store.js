@@ -18,7 +18,6 @@ import {
   USERS,
   RELEASE_NOTES,
   NOTIFICATIONS,
-  DEMO_PASSWORD,
   flattenNavPaths,
   PROFILE_SEED,
 } from "./appData.js";
@@ -28,6 +27,7 @@ import {
   normalizePathLabel,
 } from "./permissions.js";
 import { destinationFor } from "./deepLink.js";
+import { authHeaders, setToken, clearToken } from "./session.js";
 import { renderReleaseNoteEmail } from "../email/releaseNoteEmail.js";
 
 // Bump on any seed change: persisted state from an older seed would otherwise
@@ -106,15 +106,41 @@ export function resetDemoData() {
 }
 
 export const api = {
-  /** POST /api/auth/login */
-  login(email, password) {
-    const user = state.users.find(
-      (u) => u.email.toLowerCase() === String(email).trim().toLowerCase(),
-    );
-    if (!user || password !== DEMO_PASSWORD) {
-      return fail(401, "Invalid email or password");
+  /**
+   * POST /api/auth/login
+   *
+   * Authentication happens on the server, which issues the token the protected
+   * endpoints require. A browser-side password check could not gate them.
+   */
+  async login(email, password) {
+    const res = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+
+    let payload;
+    try {
+      payload = await res.json();
+    } catch {
+      throw Object.assign(new Error("Sign-in endpoint is unreachable."), {
+        status: res.status,
+      });
     }
-    return delay(user);
+    if (!res.ok) {
+      throw Object.assign(new Error(payload.error ?? "Invalid email or password"), {
+        status: res.status,
+      });
+    }
+
+    setToken(payload.token);
+    // Keep the local copy authoritative for the permissions the UI filters on.
+    const local = state.users.find((u) => u.id === payload.user.id);
+    return structuredClone(local ?? payload.user);
+  },
+
+  logout() {
+    clearToken();
   },
 
   /** GET /api/auth/me */
@@ -141,7 +167,7 @@ export const api = {
   async importPullRequest(ref) {
     const res = await fetch("/api/pr-import", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...authHeaders() },
       body: JSON.stringify({ ref }),
     });
 
@@ -298,7 +324,7 @@ export const api = {
     try {
       const res = await fetch("/api/send-email", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({
           note: { title: note.title, summary: note.summary, type: note.type },
           recipients: personalizations.map((p) => ({

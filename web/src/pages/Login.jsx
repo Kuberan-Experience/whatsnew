@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { useAuth } from "../lib/auth.jsx";
-import { USERS, DEMO_PASSWORD } from "../lib/appData.js";
+import { USERS } from "../lib/appData.js";
 
 export default function Login() {
   const { login } = useAuth();
   const [email, setEmail] = useState("kuberan@experience.com");
-  const [password, setPassword] = useState(DEMO_PASSWORD);
+  const [password, setPassword] = useState("");
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
 
@@ -61,7 +61,10 @@ export default function Login() {
         </form>
 
         <div className="login__demo">
-          <p>Demo accounts — password <code>{DEMO_PASSWORD}</code></p>
+          <p>
+            Accounts below share one password, held server-side as{" "}
+            <code>APP_PASSWORD</code>. It is not in this page or the bundle.
+          </p>
           <ul>
             {USERS.map((u) => (
               <li key={u.id}>

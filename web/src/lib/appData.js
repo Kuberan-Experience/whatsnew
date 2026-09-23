@@ -89,8 +89,8 @@ export const PROFILE_SEED = {
   profileUrl: "kps-restaurant-1233-18sep-158451",
 };
 
-// Password for every seeded account in this UI-only build.
-export const DEMO_PASSWORD = "whatsnew123";
+// Passwords are not stored here. Sign-in is verified server-side against
+// APP_PASSWORD; see server/auth.mjs.
 
 export const USERS = [
   {

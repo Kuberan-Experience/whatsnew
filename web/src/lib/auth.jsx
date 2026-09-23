@@ -35,6 +35,7 @@ export function AuthProvider({ children }) {
       },
       logout() {
         localStorage.removeItem(SESSION_KEY);
+        api.logout();
         setUser(null);
       },
     }),

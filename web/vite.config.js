@@ -18,6 +18,8 @@ function readSecrets() {
     }
   }
   return {
+    authSecret: out.AUTH_SECRET ?? "",
+    appPassword: out.APP_PASSWORD ?? "",
     anthropicApiKey: out.ANTHROPIC_API_KEY ?? out.ANTHROPIC_TOKEN ?? "",
     githubToken: out.GITHUB_TOKEN ?? out.GITHUB_ACCESS_TOKEN ?? "",
     sendgridApiKey: out.SENDGRID_API_KEY ?? "",
@@ -41,6 +43,42 @@ function apiPlugin() {
   return {
     name: "whatsnew-api",
     configureServer(server) {
+      server.middlewares.use("/api/auth/login", async (req, res) => {
+        const send = (status, body) => {
+          res.statusCode = status;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify(body));
+        };
+        if (req.method !== "POST") return send(405, { error: "Use POST" });
+
+        try {
+          const secrets = readSecrets();
+          const chunks = [];
+          for await (const chunk of req) chunks.push(chunk);
+          const { email, password } = JSON.parse(
+            Buffer.concat(chunks).toString("utf8") || "{}"
+          );
+
+          const [{ authenticate }, data] = await Promise.all([
+            server.ssrLoadModule("/server/auth.mjs"),
+            server.ssrLoadModule("/src/lib/appData.js"),
+          ]);
+
+          send(
+            200,
+            authenticate({
+              email,
+              password,
+              accounts: data.USERS,
+              appPassword: secrets.appPassword,
+              secret: secrets.authSecret,
+            })
+          );
+        } catch (err) {
+          send(err?.status ?? 500, { error: err?.message ?? "Sign-in failed" });
+        }
+      });
+
       server.middlewares.use("/api/pr-import", async (req, res) => {
         // Read the file itself on every request. Vite's loadEnv() with an empty
         // prefix folds process.env back into its result, so a key written there
@@ -57,6 +95,10 @@ function apiPlugin() {
         if (req.method !== "POST") return send(405, { error: "Use POST" });
 
         try {
+          const secrets = readSecrets();
+          const { requireRole } = await server.ssrLoadModule("/server/auth.mjs");
+          requireRole(req, secrets.authSecret, ["admin"]);
+
           const chunks = [];
           for await (const chunk of req) chunks.push(chunk);
           const { ref } = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
@@ -90,6 +132,9 @@ function apiPlugin() {
 
         try {
           const secrets = readSecrets();
+          const { requireRole } = await server.ssrLoadModule("/server/auth.mjs");
+          requireRole(req, secrets.authSecret, ["admin"]);
+
           const chunks = [];
           for await (const chunk of req) chunks.push(chunk);
           const { note, recipients } = JSON.parse(
