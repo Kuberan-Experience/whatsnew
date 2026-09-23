@@ -1,7 +1,12 @@
 /**
- * Seed data for the UI-only build. Shapes match the API contract the backend
- * will expose, so swapping the mock store for real fetch calls is a one-file
- * change in src/lib/store.js.
+ * The app's own content and structure — not fabricated release-note data.
+ *
+ *  - NAV_TREE      the sidebar the agent actually sees, and the vocabulary
+ *                  permissions are written in ("Account Center > Profile").
+ *  - PROFILE_SEED  the business profile an agent edits.
+ *  - USERS         who can sign in.
+ *
+ * Release notes are not here. Every one of them comes from a real pull request.
  */
 
 export const NAV_TREE = [
@@ -48,60 +53,6 @@ export function flattenNavPaths() {
   return out;
 }
 
-/**
- * Addressable fields and components in the app.
- *
- * This is the join between a release note and the actual UI: a PR that adds a
- * field names its `componentKey` here, and the screen renders a "New" badge on
- * exactly that control once the note has been sent — to the agents allowed to
- * see it. Without this, a release note is just prose that claims something
- * shipped; with it, the claim points at the control.
- */
-export const PROFILE_COMPONENTS = [
-  {
-    key: "profile.publishName",
-    label: "Publish Name",
-    path: "Account Center > Profile",
-  },
-  { key: "profile.price", label: "Price", path: "Account Center > Profile" },
-  {
-    key: "profile.tagline",
-    label: "Tagline",
-    path: "Account Center > Profile",
-  },
-  { key: "profile.logo", label: "Logo", path: "Account Center > Profile" },
-  {
-    key: "profile.vertical",
-    label: "Vertical",
-    path: "Account Center > Profile",
-  },
-  {
-    key: "profile.category",
-    label: "Category",
-    path: "Account Center > Profile",
-  },
-  {
-    key: "profile.productsServices",
-    label: "Products and Services",
-    path: "Account Center > Profile",
-  },
-  {
-    key: "profile.additionalCategories",
-    label: "Additional Categories",
-    path: "Account Center > Profile",
-  },
-  {
-    key: "profile.profileUrl",
-    label: "Your Profile URL",
-    path: "Account Center > Profile",
-  },
-  {
-    key: "profile.menuItems",
-    label: "Menu Items",
-    path: "Account Center > Profile > Menu Items",
-  },
-];
-
 export const CATEGORY_OPTIONS = [
   "American Restaurant",
   "Anago Restaurant",
@@ -127,6 +78,7 @@ export const PROFILE_SEED = {
   publishName: "KPS Restaurant 18Sep",
   price: "$$",
   tagline: "",
+  personalWebsite: "",
   logo: null,
   vertical: "Food & Beverages",
   category: "American Restaurant",
@@ -157,7 +109,7 @@ export const USERS = [
   },
   {
     id: "u_nivedth",
-    email: "nivedth@experience.com",
+    email: "kuberan@experience.com",
     name: "Nivedth",
     role: "agent",
     // Scoped to Account Center, so Command Center releases (Insights, Search

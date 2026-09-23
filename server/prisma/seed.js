@@ -19,7 +19,7 @@ const USERS = [
     permissions: ["*"],
   },
   {
-    email: "nivedth@experience.com",
+    email: "kuberan@experience.com",
     name: "Nivedth",
     role: "agent",
     // Account Center only — Command Center releases skip this account.

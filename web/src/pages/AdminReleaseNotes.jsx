@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, resetDemoData } from "../lib/store.js";
+import { destinationFor } from "../lib/deepLink.js";
 import { useAuth } from "../lib/auth.jsx";
 import TypeBadge, { TYPE_OPTIONS } from "../components/TypeBadge.jsx";
 import PathsInput from "../components/PathsInput.jsx";
 import EmailPreview from "../components/EmailPreview.jsx";
-import { PROFILE_COMPONENTS } from "../mock/data.js";
 
 const FILTERS = [
   { value: "all", label: "All" },
@@ -60,7 +60,6 @@ export default function AdminReleaseNotes() {
       title: selected.title,
       summary: selected.summary,
       type: selected.type,
-      componentKey: selected.componentKey ?? "",
       paths: [...selected.paths],
     });
     setStatus({ busy: false, error: null, flash: null });
@@ -91,15 +90,20 @@ export default function AdminReleaseNotes() {
     (draft.title !== selected.title ||
       draft.summary !== selected.summary ||
       draft.type !== selected.type ||
-      draft.componentKey !== (selected.componentKey ?? "") ||
       draft.paths.join("|") !== selected.paths.join("|"));
 
-  async function run(fn, flash) {
+  /**
+   * Runs an action, reloads, then shows a confirmation. The message comes from
+   * whatever `fn` returns, falling back to `defaultFlash` — an earlier version
+   * let `fn` set the status itself and then clobbered it here, so a successful
+   * send confirmed nothing.
+   */
+  async function run(fn, defaultFlash) {
     setStatus({ busy: true, error: null, flash: null });
     try {
-      await fn();
+      const flash = await fn();
       await load();
-      setStatus({ busy: false, error: null, flash: flash ?? null });
+      setStatus({ busy: false, error: null, flash: flash ?? defaultFlash ?? null });
     } catch (err) {
       setStatus({ busy: false, error: err.message, flash: null });
     }
@@ -117,9 +121,15 @@ export default function AdminReleaseNotes() {
       setImporting({
         busy: false,
         error: null,
-        flash: `Imported PR #${note.prNumber} from ${note.prRepo}${
-          note.confidence === "low" ? " — the PR body was thin, so check the copy" : ""
-        }`,
+        flash:
+          `Imported PR #${note.prNumber} from ${note.prRepo}` +
+          (note.templateEmpty
+            ? " — but its template was empty, so you'll need to write the note"
+            : note.generatedBy === "pull-request"
+              ? " — Claude was unavailable, so the text came straight from the PR"
+              : note.confidence === "low"
+                ? " — the PR body was thin, so check the copy"
+                : ""),
       });
     } catch (err) {
       setImporting({ busy: false, error: err.message, flash: null });
@@ -135,11 +145,13 @@ export default function AdminReleaseNotes() {
       // version the admin thinks they already changed.
       if (dirty) await api.updateReleaseNote(selected.id, draft);
       const res = await api.sendReleaseNote(selected.id);
-      setStatus({
-        busy: false,
-        error: null,
-        flash: `Sent to ${res.recipients} agent${res.recipients === 1 ? "" : "s"} in ${res.sendGridCalls} SendGrid call${res.sendGridCalls === 1 ? "" : "s"}`,
-      });
+      const who = `${res.recipients} agent${res.recipients === 1 ? "" : "s"}`;
+      const inApp = res.notified
+        ? `${res.notified} in-app notification${res.notified === 1 ? "" : "s"} posted (links to ${res.destination}).`
+        : "No in-app notification — these paths don't map to a screen in the app.";
+      return res.delivered
+        ? `Emailed ${who} via SendGrid in ${res.sendGridCalls} call${res.sendGridCalls === 1 ? "" : "s"}. ${inApp}`
+        : `NO email was sent — ${res.deliveryError} ${inApp}`;
     });
 
   const previewNote = draft
@@ -221,7 +233,11 @@ export default function AdminReleaseNotes() {
                   <p className="card__title">{n.title}</p>
                   <p className="card__meta">
                     PR #{n.prNumber}
-                    {n.polished && <span className="card__ai">AI-polished</span>}
+                    {n.generatedBy === "pull-request" ? (
+                      <span className="card__raw">From PR text</span>
+                    ) : (
+                      <span className="card__ai">AI-written</span>
+                    )}
                   </p>
                 </button>
               </li>
@@ -275,6 +291,26 @@ export default function AdminReleaseNotes() {
                   {selected.prRepo ? `${selected.prRepo}#${selected.prNumber}` : `PR #${selected.prNumber}`} ↗
                 </a>
               </div>
+
+              {selected.templateEmpty && (
+                <p className="notice notice--warn">
+                  This PR merged with the release-note template untouched — no Type, no
+                  “What changed”, no paths.{" "}
+                  {selected.uiLabels?.length
+                    ? `So this was read from the diff instead, which adds: ${selected.uiLabels.join(", ")}. Confirm the wording and the paths below.`
+                    : "Nothing in the body or the diff described user-facing change, so write the summary and paths below."}
+                </p>
+              )}
+
+              {!selected.templateEmpty && selected.generatedBy === "pull-request" && (
+                <p className="notice notice--warn">
+                  Written from the pull request text, not by Claude —{" "}
+                  {selected.modelError}
+                  <br />
+                  The wording below is lifted from the PR, so read it as the user will
+                  before sending.
+                </p>
+              )}
 
               {locked && (
                 <p className="notice">
@@ -373,27 +409,6 @@ export default function AdminReleaseNotes() {
                     </select>
                   </label>
 
-                  <label>
-                    Highlights which control (optional)
-                    <select
-                      value={draft.componentKey}
-                      disabled={locked}
-                      onChange={(e) => setDraft({ ...draft, componentKey: e.target.value })}
-                    >
-                      <option value="">— none —</option>
-                      {PROFILE_COMPONENTS.map((c) => (
-                        <option key={c.key} value={c.key}>
-                          {c.label} ({c.path})
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <p className="hint">
-                    When set, the control wears a "New" badge in the app for every agent
-                    this note reaches — so the release note points at the thing it
-                    describes.
-                  </p>
-
                   <div className="field">
                     <span className="field__label">Path(s) in app</span>
                     <PathsInput
@@ -401,6 +416,13 @@ export default function AdminReleaseNotes() {
                       disabled={locked}
                       onChange={(paths) => setDraft({ ...draft, paths })}
                     />
+                    {draft.paths.length > 0 && !destinationFor({ paths: draft.paths }) && (
+                      <p className="hint hint--warn">
+                        None of these paths map to a screen in the app, so no in-app
+                        notification will be created — there would be nowhere for
+                        “Check it out” to go. The email still sends.
+                      </p>
+                    )}
                     <p className="hint">
                       {selected.pathsFromTemplate
                         ? "Taken verbatim from the PR's \u201cPath(s) in app\u201d section."
@@ -412,6 +434,27 @@ export default function AdminReleaseNotes() {
                     <details className="raw">
                       <summary>What the PR actually said</summary>
                       <p>{selected.rawWhatChanged}</p>
+                    </details>
+                  )}
+
+                  {selected.changedFiles?.length > 0 && (
+                    <details className="raw">
+                      <summary>
+                        Files this PR changed ({selected.changedFiles.length})
+                      </summary>
+                      <ul className="files">
+                        {selected.changedFiles.map((f) => (
+                          <li key={f.filename}>
+                            <span className={`files__status files__status--${f.status}`}>
+                              {f.status}
+                            </span>
+                            <code>{f.filename}</code>
+                            <span className="files__count">
+                              +{f.additions} −{f.deletions}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
                     </details>
                   )}
 

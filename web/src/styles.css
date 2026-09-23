@@ -287,18 +287,6 @@ textarea { resize: vertical; }
   .bell__panel { width: min(360px, calc(100vw - 32px)); }
 }
 
-/* ---------- New badge ---------- */
-.newBadge {
-  display: inline-block; margin-left: 8px; cursor: help;
-  background: #fff1e8; color: var(--accent); border: 1px solid #f6d2bd;
-  font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase;
-  padding: 2px 7px; border-radius: 999px; vertical-align: middle;
-}
-.sidebar__new {
-  float: right; background: var(--accent); color: #fff;
-  font-size: 10px; font-weight: 800; min-width: 17px; height: 17px;
-  border-radius: 999px; display: inline-grid; place-items: center; padding: 0 5px;
-}
 
 /* ---------- Profile ---------- */
 .profile { max-width: 900px; }
@@ -308,7 +296,6 @@ textarea { resize: vertical; }
 }
 .profile__bar h1 { font-size: 20px; }
 .profile__barActions { display: flex; align-items: center; gap: 10px; }
-.profile__newCount { font-size: 12px; color: var(--accent); font-weight: 600; }
 
 .profile__card {
   background: var(--surface); border: 1px solid var(--hairline);
@@ -474,7 +461,6 @@ textarea { resize: vertical; }
   border-radius: 6px; padding: 7px 12px; font-size: 13px;
 }
 .pv__actions { display: flex; align-items: center; gap: 10px; }
-.pv__newHint { font-size: 12px; color: var(--accent); font-weight: 600; }
 .pv__share {
   width: 38px; height: 38px; border-radius: 50%; cursor: pointer;
   border: 1px solid #bcd0e8; background: var(--surface); color: var(--brand); font-size: 15px;
@@ -500,3 +486,96 @@ textarea { resize: vertical; }
 .pv__site { margin: 6px 0 0; font-size: 13.5px; }
 .pv__site a { color: var(--brand); text-decoration: none; }
 .pv__site a:hover { text-decoration: underline; }
+
+.notice--warn { background: #fff7ed; color: #9a3412; }
+.card__raw {
+  background: #fff7ed; color: #c2410c; border-radius: 4px;
+  padding: 1px 6px; font-weight: 600;
+}
+
+.files { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
+.files li { display: flex; align-items: center; gap: 9px; font-size: 12.5px; flex-wrap: wrap; }
+.files code { font-size: 12px; color: var(--ink); }
+.files__count { color: var(--muted); font-size: 11.5px; margin-left: auto; }
+.files__status {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  padding: 2px 6px; border-radius: 4px; background: var(--canvas); color: var(--body);
+}
+.files__status--added { background: #ecfdf5; color: #047857; }
+.files__status--removed { background: #fef2f2; color: #b91c1c; }
+
+/* ---------- "Check it out" ---------- */
+.bell__cta {
+  margin-top: 10px; border: 0; background: none; cursor: pointer;
+  color: var(--brand); font-weight: 600; font-size: 13px; padding: 2px 0;
+}
+.bell__cta:hover { text-decoration: underline; }
+
+/* The flash shown on the control a release note points at. */
+@keyframes releaseFlash {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(228, 101, 42, 0); }
+  15%, 65% { box-shadow: 0 0 0 4px rgba(228, 101, 42, .28); }
+}
+.is-flashing {
+  animation: releaseFlash 3s ease-in-out 1;
+  border-color: var(--accent) !important;
+  border-radius: 8px;
+  scroll-margin-block: 90px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .is-flashing { animation: none; box-shadow: 0 0 0 4px rgba(228, 101, 42, .28); }
+}
+
+.paths__suggest {
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px;
+}
+.paths__suggest > span { font-size: 11.5px; color: var(--muted); }
+.paths__suggestBtn {
+  border: 1px dashed #bcd0e8; background: #f7faff; color: var(--brand);
+  border-radius: 6px; padding: 4px 9px; font-size: 12px; cursor: pointer;
+}
+.paths__suggestBtn:hover:not(:disabled) { background: #eaf1fb; }
+.paths__suggestBtn:disabled { opacity: .45; cursor: default; }
+
+/* ---------- Agent dashboard ---------- */
+.dash { max-width: 860px; display: grid; gap: 20px; }
+.dash__head h1 { font-size: 22px; }
+.dash__head p { margin: 6px 0 0; color: var(--muted); }
+
+.dash__panel {
+  background: var(--surface); border: 1px solid var(--hairline);
+  border-radius: 12px; padding: 20px 22px;
+}
+.dash__panelHead { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.dash__panelHead h2 { font-size: 17px; }
+.dash__unread {
+  background: #fff1e8; color: var(--accent); border-radius: 999px;
+  padding: 2px 9px; font-size: 11.5px; font-weight: 700;
+}
+.dash__empty { color: var(--muted); margin: 0; }
+
+.dash__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.dash__item { border: 1px solid var(--hairline); border-radius: 10px; padding: 15px 16px; }
+.dash__item.is-unread { border-left: 3px solid var(--brand-soft); background: #fbfdff; }
+.dash__itemTop { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.dash__itemTop time { font-size: 12px; color: var(--muted); }
+.dash__item h3 { font-size: 15px; margin: 0 0 5px; }
+.dash__item p { margin: 0; color: var(--body); font-size: 14px; }
+.dash__itemFoot {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; margin-top: 12px;
+}
+.dash__paths { display: flex; gap: 6px; flex-wrap: wrap; }
+.btn--sm { padding: 7px 13px; font-size: 13px; }
+
+.dash__cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.dash__card {
+  background: var(--surface); border: 1px solid var(--hairline); border-radius: 12px;
+  padding: 16px 18px; text-decoration: none; color: inherit; display: grid; gap: 6px;
+  align-content: start;
+}
+.dash__card h3 { font-size: 15px; }
+.dash__card p { margin: 0; font-size: 13px; color: var(--muted); }
+.dash__cardLink { font-size: 13px; color: var(--brand); font-weight: 600; margin-top: 4px; }
+a.dash__card:hover { border-color: #c7d6ea; }
+.dash__card--soon { opacity: .6; }

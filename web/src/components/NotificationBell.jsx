@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/auth.jsx";
+import { destinationFor, goToRelease } from "../lib/deepLink.js";
 import { api } from "../lib/store.js";
 import TypeBadge from "./TypeBadge.jsx";
 
@@ -25,6 +27,7 @@ export default function NotificationBell() {
   const [items, setItems] = useState([]);
   const [unread, setUnread] = useState(0);
   const wrapRef = useRef(null);
+  const navigate = useNavigate();
 
   const refresh = useCallback(async () => {
     if (!user) return;
@@ -68,6 +71,16 @@ export default function NotificationBell() {
       await api.markAllRead(user.id);
       setItems((prev) => prev.map((n) => ({ ...n, read: true })));
     }
+  }
+
+  /**
+   * Send the agent to the control the note describes. The page it lands on
+   * reads `releaseTarget` from router state and reveals the field itself —
+   * the bell doesn't need to know how any screen is built.
+   */
+  function checkItOut(n) {
+    setOpen(false);
+    goToRelease(navigate, n.releaseNote);
   }
 
   return (
@@ -119,6 +132,16 @@ export default function NotificationBell() {
                         <li key={p}>{p}</li>
                       ))}
                     </ul>
+                  )}
+
+                  {destinationFor(n.releaseNote) && (
+                    <button
+                      type="button"
+                      className="bell__cta"
+                      onClick={() => checkItOut(n)}
+                    >
+                      Check it out →
+                    </button>
                   )}
                 </li>
               ))}

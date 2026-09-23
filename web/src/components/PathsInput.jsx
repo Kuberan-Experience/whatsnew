@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from "react";
 import { api } from "../lib/store.js";
 import { normalizePathLabel } from "../lib/permissions.js";
+import { routeForPath } from "../lib/deepLink.js";
 
 /**
  * Multi-value input for nav paths ("Account Center > Billing > Invoices").
@@ -45,6 +46,12 @@ export default function PathsInput({ value, onChange, disabled }) {
 
   const unknown = value.filter((v) => !suggestions.includes(v));
 
+  // Paths that resolve to a real screen — these are the ones worth one-click
+  // adding, because only they produce an in-app notification with a CTA.
+  const linkable = suggestions.filter(
+    (p) => routeForPath(p) && p.split(">").length <= 2
+  );
+
   return (
     <div className="paths">
       <div className={`paths__box ${disabled ? "is-disabled" : ""}`}>
@@ -63,7 +70,7 @@ export default function PathsInput({ value, onChange, disabled }) {
             className="paths__input"
             list={listId}
             value={draft}
-            placeholder={value.length ? "Add another…" : "Account Center > Billing"}
+            placeholder={value.length ? "Add another…" : "Type a nav path, e.g. Account Center > Profile"}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={onKeyDown}
             onBlur={() => draft && add(draft)}
@@ -77,9 +84,27 @@ export default function PathsInput({ value, onChange, disabled }) {
         ))}
       </datalist>
 
+      {linkable.length > 0 && (
+        <div className="paths__suggest">
+          <span>Opens a screen:</span>
+          {linkable.map((p) => (
+            <button
+              key={p}
+              type="button"
+              className="paths__suggestBtn"
+              disabled={disabled || value.some((v) => v.toLowerCase() === p.toLowerCase())}
+              onClick={() => add(p)}
+            >
+              + {p}
+            </button>
+          ))}
+        </div>
+      )}
+
       {value.length === 0 && (
         <p className="hint">
-          No paths — this note is treated as app-wide and goes to every agent.
+          No paths yet — as it stands this note is app-wide, and creates no in-app
+          notification because there is no screen to open.
         </p>
       )}
       {unknown.length > 0 && (

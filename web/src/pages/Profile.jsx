@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { api } from "../lib/store.js";
+import { findControlByLabel, revealWhenReady } from "../lib/deepLink.js";
 import { useAuth } from "../lib/auth.jsx";
-import { CATEGORY_OPTIONS, SERVICE_OPTIONS } from "../mock/data.js";
+import { CATEGORY_OPTIONS, SERVICE_OPTIONS } from "../lib/appData.js";
 import ChipsField from "../components/ChipsField.jsx";
-import NewBadge from "../components/NewBadge.jsx";
 
 const PRICES = [
   { value: "$", hint: "Under $10" },
@@ -17,10 +18,11 @@ const TABS = ["Quick Actions", "Reviews", "Rating", "About"];
 
 export default function Profile() {
   const { user } = useAuth();
+  const location = useLocation();
+  const releaseTarget = location.state?.releaseTarget ?? null;
   const [mode, setMode] = useState("preview");
   const [saved, setSaved] = useState(null);
   const [form, setForm] = useState(null);
-  const [highlights, setHighlights] = useState({});
   const [status, setStatus] = useState({ busy: false, error: null, flash: null });
 
   useEffect(() => {
@@ -28,7 +30,6 @@ export default function Profile() {
       setSaved(p);
       setForm(p);
     });
-    api.listHighlights(user.id).then(setHighlights);
   }, [user.id]);
 
   const dirty = useMemo(
@@ -36,14 +37,42 @@ export default function Profile() {
     [form, saved]
   );
 
-  if (!form) return <p className="feed__empty">Loading…</p>;
+  /**
+   * Arrived from a "Check it out": find the control the release note named.
+   * Most new fields live in the editor rather than the preview, so if it isn't
+   * on screen we open the editor and look again.
+   */
+  useEffect(() => {
+    if (!releaseTarget?.labels?.length || !form) return;
+    let cancelled = false;
 
-  const newCount = Object.keys(highlights).filter((k) => k.startsWith("profile.")).length;
+    (async () => {
+      for (const label of releaseTarget.labels) {
+        if (cancelled) return;
+        if (findControlByLabel(label)) {
+          await revealWhenReady(label);
+          return;
+        }
+      }
+      // Not in the preview — it is an editable field.
+      setMode("edit");
+      for (const label of releaseTarget.labels) {
+        if (cancelled) return;
+        if (await revealWhenReady(label)) return;
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // `at` is a timestamp, so clicking the same CTA twice re-runs this.
+  }, [releaseTarget?.at, releaseTarget?.labels?.join("|"), Boolean(form)]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!form) return <p className="feed__empty">Loading…</p>;
 
   return mode === "preview" ? (
     <ProfilePreview
       profile={saved}
-      newCount={newCount}
       onEdit={() => {
         setForm(saved);
         setStatus({ busy: false, error: null, flash: null });
@@ -54,7 +83,6 @@ export default function Profile() {
     <ProfileEditor
       form={form}
       setForm={setForm}
-      highlights={highlights}
       dirty={dirty}
       status={status}
       onCancel={() => {
@@ -79,7 +107,7 @@ export default function Profile() {
 
 /* ------------------------------------------------------------------ preview */
 
-function ProfilePreview({ profile, newCount, onEdit }) {
+function ProfilePreview({ profile, onEdit }) {
   const categories = [
     profile.category,
     ...profile.additionalCategories.map((r) => r.category),
@@ -144,11 +172,6 @@ function ProfilePreview({ profile, newCount, onEdit }) {
               ))}
             </div>
             <div className="pv__actions">
-              {newCount > 0 && (
-                <span className="pv__newHint">
-                  {newCount} new {newCount === 1 ? "field" : "fields"} in Edit
-                </span>
-              )}
               <button type="button" className="btn btn--primary" onClick={onEdit}>
                 ✎ Edit
               </button>
@@ -192,7 +215,7 @@ function ProfilePreview({ profile, newCount, onEdit }) {
 
 /* ------------------------------------------------------------------- editor */
 
-function ProfileEditor({ form, setForm, highlights, dirty, status, onCancel, onSave }) {
+function ProfileEditor({ form, setForm, dirty, status, onCancel, onSave }) {
   const set = (patch) => setForm({ ...form, ...patch });
 
   const updateRow = (id, patch) =>
@@ -243,7 +266,6 @@ function ProfileEditor({ form, setForm, highlights, dirty, status, onCancel, onS
           <div className="profile__name">
             <span className="field__label">
               Publish Name <b className="req">•</b>
-              <NewBadge highlight={highlights["profile.publishName"]} />
             </span>
             <input
               value={form.publishName}
@@ -254,7 +276,7 @@ function ProfileEditor({ form, setForm, highlights, dirty, status, onCancel, onS
 
         <section className="profile__section">
           <span className="field__label">
-            Price <NewBadge highlight={highlights["profile.price"]} />
+            Price
           </span>
           <div className="segmented">
             {PRICES.map((p) => (
@@ -274,7 +296,7 @@ function ProfileEditor({ form, setForm, highlights, dirty, status, onCancel, onS
         <section className="profile__grid">
           <div className="field">
             <span className="field__label">
-              Tagline <NewBadge highlight={highlights["profile.tagline"]} />
+              Tagline
             </span>
             <input
               value={form.tagline}
@@ -285,7 +307,7 @@ function ProfileEditor({ form, setForm, highlights, dirty, status, onCancel, onS
 
           <div className="field">
             <span className="field__label">
-              Logo <NewBadge highlight={highlights["profile.logo"]} />
+              Logo
             </span>
             <div className="upload">
               <p className="upload__cta">
@@ -301,7 +323,6 @@ function ProfileEditor({ form, setForm, highlights, dirty, status, onCancel, onS
         <section className="profile__section">
           <label className="field__label" htmlFor="profile-personal-website">
             Personal Website
-            <NewBadge highlight={highlights["profile.personalWebsite"]} />
           </label>
           <input
             id="profile-personal-website"
@@ -318,7 +339,7 @@ function ProfileEditor({ form, setForm, highlights, dirty, status, onCancel, onS
 
         <section className="profile__section">
           <span className="field__label">
-            Vertical <NewBadge highlight={highlights["profile.vertical"]} />
+            Vertical
           </span>
           {/* Set during onboarding and not editable here — same as the real app. */}
           <input value={form.vertical} disabled />
@@ -327,7 +348,6 @@ function ProfileEditor({ form, setForm, highlights, dirty, status, onCancel, onS
         <section className="profile__section">
           <span className="field__label">
             Choose a category that applies to your business
-            <NewBadge highlight={highlights["profile.category"]} />
           </span>
           <select value={form.category} onChange={(e) => set({ category: e.target.value })}>
             {CATEGORY_OPTIONS.map((c) => (
@@ -339,7 +359,6 @@ function ProfileEditor({ form, setForm, highlights, dirty, status, onCancel, onS
         <section className="profile__section">
           <span className="field__label">
             Products and Services <b className="req">•</b>
-            <NewBadge highlight={highlights["profile.productsServices"]} />
           </span>
           <ChipsField
             value={form.productsServices}
@@ -352,7 +371,6 @@ function ProfileEditor({ form, setForm, highlights, dirty, status, onCancel, onS
         <section className="profile__section">
           <span className="field__label">
             Additional Categories
-            <NewBadge highlight={highlights["profile.additionalCategories"]} />
           </span>
 
           <div className="addl">
@@ -420,7 +438,6 @@ function ProfileEditor({ form, setForm, highlights, dirty, status, onCancel, onS
         <section className="profile__section">
           <span className="field__label">
             Your Profile URL <b className="req">•</b>
-            <NewBadge highlight={highlights["profile.profileUrl"]} />
           </span>
           <div className="urlRow">
             <input value={URL_PREFIX} disabled />

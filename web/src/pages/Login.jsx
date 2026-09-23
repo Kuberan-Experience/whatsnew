@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "../lib/auth.jsx";
-import { USERS, DEMO_PASSWORD } from "../mock/data.js";
+import { USERS, DEMO_PASSWORD } from "../lib/appData.js";
 
 export default function Login() {
   const { login } = useAuth();
